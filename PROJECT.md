@@ -1,6 +1,6 @@
 # libmembus
 
-C++17 POSIX shared memory IPC library. Part of the LangSyn protocol stack.
-Antheos runs on top of it.
+C++17 POSIX shared memory IPC library. Circular ring buffer with multi-reader
+broadcast. Bytes in, bytes out.
 
 Baseline: `docs/baseline/membus.md`

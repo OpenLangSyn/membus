@@ -1,8 +1,8 @@
-# MemBus Specification v1.0.0
+# MemBus Specification v2.0.0
 
 **Author:** Are Bjorby <are.bjorby@proton.me>
 **Date:** 2026-03-16
-**Language:** C11
+**Language:** C++17
 **License:** Proprietary
 
 ---
@@ -29,12 +29,12 @@ layers handle protocol semantics.
 ### 2.1 Shared Memory Segment
 
 Each bus maps to one POSIX shared memory object at `/dev/shm/<name>_shm`.
-The segment contains a fixed header (`membus_buffer_t`) followed by a
+The segment contains a fixed header (`ShmBuffer`) followed by a
 variable-length circular data buffer.
 
 ```
 ┌────────────────────────────────────────────────┐
-│ membus_buffer_t header                         │
+│ ShmBuffer header                               │
 │   magic, version, size, write_pos              │
 │   reader_count                                 │
 │   write_lock (robust mutex, process-shared)    │
@@ -46,20 +46,20 @@ variable-length circular data buffer.
 └────────────────────────────────────────────────┘
 ```
 
-Total segment size: `sizeof(membus_buffer_t) + size`.
+Total segment size: `sizeof(ShmBuffer) + size`.
 
-### 2.2 Per-Process Handle
+### 2.2 Bus Handle
 
-Each call to `membus_open()` returns a process-local `membus_t` handle.
-The handle holds the mmap pointer, file descriptor, and the index of
-this handle's reader slot in shared memory. The handle is heap-allocated
-and freed by `membus_close()`.
+Each `Bus` constructor call creates a process-local RAII handle via pimpl
+(`Bus::Impl`). The handle holds the mmap pointer, file descriptor, and
+the index of this handle's reader slot in shared memory. The handle is
+heap-allocated internally and freed by the `Bus` destructor.
 
 ### 2.3 SHM Naming
 
 Bus name `"my_bus"` maps to POSIX SHM object `"/my_bus_shm"`.
 The `_shm` suffix is appended internally. Bus names must not be empty
-and must fit within `MEMBUS_MAX_NAME` (256 bytes) including the suffix.
+and must fit within `MAX_NAME` (256 bytes) including the suffix.
 
 ### 2.4 Permissions
 
@@ -70,21 +70,25 @@ controls ownership via `umask` at creation time.
 
 ## 3. Constants
 
+All constants live in namespace `membus`.
+
 | Constant | Value | Description |
 |----------|-------|-------------|
-| MEMBUS_DEFAULT_SIZE | 65536 (64 KB) | Default buffer capacity when size=0 |
-| MEMBUS_MAX_NAME | 256 | Maximum bus name length (bytes) |
-| MEMBUS_MAX_READERS | 32 | Maximum concurrent reader slots per bus |
-| MEMBUS_READER_NAME_LEN | 32 | Maximum reader debug label length |
-| MEMBUS_NONBLOCK | 0x01 | Flag constant (reserved) |
-| MEMBUS_MAGIC | 0x4D425553 | Header magic ("MBUS" in ASCII) |
-| MEMBUS_VERSION | 3 | Shared memory layout version |
+| DEFAULT_SIZE | 65536 (64 KB) | Default buffer capacity when size=0 |
+| MAX_NAME | 256 | Maximum bus name length (bytes) |
+| MAX_READERS | 32 | Maximum concurrent reader slots per bus |
+| READER_NAME_LEN | 32 | Maximum reader debug label length |
+| MAGIC | 0x4D425553 | Header magic ("MBUS" in ASCII) |
+| VERSION | 3 | Shared memory layout version |
 
 ---
 
 ## 4. Data Structures
 
-### 4.1 membus_reader_slot_t
+All structures are internal to the implementation (not exposed in the
+public header). Documented here for specification completeness.
+
+### 4.1 ReaderSlot
 
 Per-reader cursor stored in shared memory. 32 slots per bus.
 
@@ -94,36 +98,35 @@ Per-reader cursor stored in shared memory. 32 slots per bus.
 | pid | pid_t | Owner process ID (0 = slot is free) |
 | name | char[32] | Debug label (human-readable, optional) |
 
-### 4.2 membus_buffer_t
+### 4.2 ShmBuffer
 
 Shared memory header. Lives at offset 0 of the mmap'd segment. The flexible
 array member `data[]` follows immediately after the struct.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| magic | uint32_t | Must equal MEMBUS_MAGIC |
-| version | uint32_t | Must equal MEMBUS_VERSION |
+| magic | uint32_t | Must equal MAGIC |
+| version | uint32_t | Must equal VERSION |
 | size | size_t | Circular buffer capacity (bytes) |
 | write_pos | size_t | Current write offset into data[] |
 | reader_count | uint32_t | Number of active reader slots |
 | write_lock | pthread_mutex_t | Process-shared robust mutex for write serialization |
 | reader_lock | pthread_mutex_t | Process-shared robust mutex for reader slot management |
 | write_seq | uint32_t | Atomic futex counter, incremented on each write |
-| readers | membus_reader_slot_t[32] | Reader slot array |
+| readers | ReaderSlot[32] | Reader slot array |
 | data | char[] | Circular buffer (flexible array member) |
 
-### 4.3 membus_t
+### 4.3 Bus::Impl
 
-Per-process handle returned by `membus_open()`. Heap-allocated, not in
-shared memory.
+Per-process handle, heap-allocated via `std::unique_ptr`. Not in
+shared memory. Hidden behind pimpl.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| name | char[256] | Bus name |
+| name | std::string | Bus name |
 | shm_fd | int | File descriptor for the SHM object |
-| buffer | membus_buffer_t* | Pointer to mmap'd shared memory |
+| buffer | ShmBuffer* | Pointer to mmap'd shared memory |
 | map_size | size_t | Total mmap size |
-| flags | int | Operation flags |
 | reader_slot | int | Index into buffer->readers (-1 = not registered) |
 
 ---
@@ -138,19 +141,19 @@ Both mutexes are initialized with:
 
 **Robust lock protocol:** Every lock acquisition goes through `robust_lock()`,
 which handles `EOWNERDEAD` by calling `pthread_mutex_consistent()` and
-continuing. `ENOTRECOVERABLE` is treated as a fatal error (returns -1,
-sets `errno = EIO`).
+continuing. `ENOTRECOVERABLE` is treated as a fatal error (throws
+`std::system_error` with `EIO`).
 
 ### 5.2 Write Lock
 
-Held during `membus_write()`. Serializes all writes to the bus. One writer
+Held during `Bus::write()`. Serializes all writes to the bus. One writer
 at a time. Released after the write and futex wake.
 
 ### 5.3 Reader Lock
 
-Held during reader slot registration (`membus_open`), deregistration
-(`membus_close`), reads (`membus_read`), and label setting
-(`membus_set_reader_name`).
+Held during reader slot registration (`Bus` constructor), deregistration
+(`Bus` destructor), reads (`Bus::read`), and label setting
+(`Bus::set_reader_name`).
 
 ### 5.4 Futex
 
@@ -159,11 +162,11 @@ Held during reader slot registration (`membus_open`), deregistration
 1. Writer atomically increments `write_seq` (`__ATOMIC_RELEASE`).
 2. Writer calls `FUTEX_WAKE` with `INT_MAX` (wake all waiters).
 
-Readers in `membus_read_wait()`:
+Readers in `Bus::read_wait()`:
 
 1. Read `write_seq` with `__ATOMIC_ACQUIRE`.
 2. Call `FUTEX_WAIT` with the observed sequence value and optional timeout.
-3. On wake (or timeout), perform a normal `membus_read()`.
+3. On wake (or timeout), perform a normal `Bus::read()`.
 
 This eliminates polling. Readers sleep in the kernel until a write occurs.
 
@@ -206,29 +209,29 @@ slow reader advancement.
 
 ## 7. Reader Slot Management
 
-### 7.1 Registration (membus_open)
+### 7.1 Registration (Bus constructor)
 
 1. Lock `reader_lock`.
 2. **Dead slot reclamation:** Scan all 32 slots. For each slot with
    `pid != 0`, call `kill(pid, 0)`. If `ESRCH` (process dead), clear
    the slot (`pid = 0`, decrement `reader_count`).
 3. **Slot allocation:** Find first slot with `pid == 0`. If none found,
-   return NULL with `errno = ENOSPC`.
+   throw `std::system_error(ENOSPC)`.
 4. Set `pid = getpid()`, `read_pos = write_pos` (new readers see only
    future data), increment `reader_count`.
 5. Unlock `reader_lock`.
 
-### 7.2 Deregistration (membus_close)
+### 7.2 Deregistration (Bus destructor)
 
 1. Lock `reader_lock`.
 2. Clear slot: `pid = 0`, clear name, decrement `reader_count`.
 3. Unlock `reader_lock`.
-4. `munmap`, `close(shm_fd)`, `free(handle)`.
+4. `munmap`, `close(shm_fd)`.
 
 ### 7.3 Same-PID Multiple Handles
 
 A single process may open multiple handles to the same bus. Each
-`membus_open()` allocates a separate slot. This is the intended pattern
+`Bus` constructor allocates a separate slot. This is the intended pattern
 for services that both read and write on the same bus.
 
 ### 7.4 Dead Process Recovery
@@ -244,10 +247,12 @@ This means a bus can never be permanently stuck due to crashed processes.
 
 ## 8. API Reference
 
-### 8.1 membus_create
+All public API lives in namespace `membus`. The header is `membus.hpp`.
 
-```c
-int membus_create(const char *name, size_t size);
+### 8.1 membus::create
+
+```cpp
+void membus::create(std::string_view name, size_t size = DEFAULT_SIZE);
 ```
 
 Create a new shared memory bus. Uses `O_CREAT | O_EXCL` — fails if the
@@ -258,48 +263,63 @@ bus already exists.
 | name | Bus name (non-empty, max 256 chars) |
 | size | Buffer capacity in bytes (0 = 64 KB default) |
 
-**Returns:** 0 on success, -1 on error (`errno` set).
+**Throws:** `std::system_error` on failure (`EEXIST` if bus exists,
+`EINVAL` if name is empty).
 
 **Behavior:**
 1. Open SHM object with `O_CREAT | O_EXCL | O_RDWR`, mode 0660.
-2. `ftruncate` to `sizeof(membus_buffer_t) + size`.
+2. `ftruncate` to `sizeof(ShmBuffer) + size`.
 3. `mmap` the segment, zero-initialize header, set magic/version/size.
 4. Initialize both robust mutexes.
 5. `munmap` and `close` — creator does not retain a handle.
 
-### 8.2 membus_open
+### 8.2 membus::destroy
 
-```c
-membus_t *membus_open(const char *name);
+```cpp
+void membus::destroy(std::string_view name);
 ```
 
-Attach to an existing bus and register a reader slot.
+Remove the shared memory object. Does not close any open handles — callers
+must close first. Silently succeeds if already gone (`ENOENT` suppressed).
+
+**Throws:** `std::system_error` on failure (`EINVAL` if name is empty).
+
+### 8.3 Bus::Bus (constructor)
+
+```cpp
+explicit membus::Bus(std::string_view name);
+```
+
+Attach to an existing bus and register a reader slot. RAII — destructor
+releases the reader slot.
 
 | Parameter | Description |
 |-----------|-------------|
 | name | Bus name (must already exist) |
 
-**Returns:** Handle pointer on success, NULL on error (`errno` set).
-`ENOSPC` if all 32 reader slots are occupied by live processes.
+**Throws:** `std::system_error` on failure (`ENOENT` if bus does not exist,
+`ENOSPC` if all 32 reader slots are occupied by live processes, `EINVAL`
+if name is empty or magic is bad).
 
 **Behavior:** Opens SHM, validates magic, reclaims dead slots, allocates
 a reader slot with `read_pos = write_pos` (new readers see only future data).
 
-### 8.3 membus_write
+Move constructible and move assignable. Copy disabled.
 
-```c
-ssize_t membus_write(membus_t *bus, const void *data, size_t len);
+### 8.4 Bus::write
+
+```cpp
+size_t Bus::write(const uint8_t* data, size_t len);
 ```
 
 Write data to the bus. Advances slow live readers if necessary (lossy).
 
 | Parameter | Description |
 |-----------|-------------|
-| bus | Bus handle |
 | data | Source buffer |
-| len | Number of bytes to write (must be > 0) |
+| len | Number of bytes to write |
 
-**Returns:** `len` on success, -1 on error (`errno` set).
+**Returns:** `len` on success. Returns 0 if `data` is null or `len` is 0.
 
 **Behavior:**
 1. Lock `write_lock`.
@@ -309,103 +329,84 @@ Write data to the bus. Advances slow live readers if necessary (lossy).
 5. Update `write_pos`.
 6. Atomic increment `write_seq`, unlock, `FUTEX_WAKE` all waiters.
 
-### 8.4 membus_read
+### 8.5 Bus::read
 
-```c
-ssize_t membus_read(membus_t *bus, void *buffer, size_t len);
+```cpp
+size_t Bus::read(uint8_t* buf, size_t len);
 ```
 
 Non-blocking read from this handle's private cursor.
 
 | Parameter | Description |
 |-----------|-------------|
-| bus | Bus handle (must have a registered reader slot) |
-| buffer | Destination buffer |
+| buf | Destination buffer |
 | len | Maximum bytes to read |
 
-**Returns:** Bytes read (may be less than `len`), 0 if no data available,
--1 on error. `EBADF` if handle has no reader slot.
+**Returns:** Bytes read (may be less than `len`), 0 if no data available or
+if `buf` is null / `len` is 0.
 
-### 8.5 membus_read_wait
+### 8.6 Bus::read_wait
 
-```c
-ssize_t membus_read_wait(membus_t *bus, void *buffer, size_t len, int timeout_ms);
+```cpp
+size_t Bus::read_wait(uint8_t* buf, size_t len, int timeout_ms = -1);
 ```
 
 Blocking read with futex-based wait.
 
 | Parameter | Description |
 |-----------|-------------|
-| bus | Bus handle |
-| buffer | Destination buffer |
+| buf | Destination buffer |
 | len | Maximum bytes to read |
-| timeout_ms | -1 = block forever, 0 = poll (same as membus_read), >0 = timeout in ms |
+| timeout_ms | -1 = block forever, 0 = poll (same as read), >0 = timeout in ms |
 
-**Returns:** Bytes read, 0 on timeout with no data, -1 on error.
+**Returns:** Bytes read, 0 on timeout with no data.
 
 **Behavior:**
-1. Try `membus_read()`. If data available, return immediately.
+1. Try `read()`. If data available, return immediately.
 2. If `timeout_ms == 0`, return 0.
 3. Load `write_seq` (atomic acquire).
 4. `FUTEX_WAIT` on `write_seq` with optional timeout.
-5. Try `membus_read()` again after wake.
+5. Try `read()` again after wake.
 
-### 8.6 membus_close
+### 8.7 Bus::set_reader_name
 
-```c
-int membus_close(membus_t *bus);
-```
-
-Detach from bus, release reader slot, free handle.
-
-**Returns:** 0 on success, -1 on error.
-
-**Behavior:** Clears reader slot (pid=0, name cleared, reader_count
-decremented), unmaps shared memory, closes file descriptor, frees handle.
-
-### 8.7 membus_destroy
-
-```c
-int membus_destroy(const char *name);
-```
-
-Remove the shared memory object. Does not close any open handles — callers
-must close first.
-
-**Returns:** 0 on success (also 0 if already gone), -1 on error.
-
-### 8.8 membus_set_reader_name
-
-```c
-void membus_set_reader_name(membus_t *bus, const char *name);
+```cpp
+void Bus::set_reader_name(std::string_view reader_name);
 ```
 
 Set a human-readable debug label for this handle's reader slot. Truncated
-to `MEMBUS_READER_NAME_LEN - 1` (31 chars). No-op if handle has no slot.
+to `READER_NAME_LEN - 1` (31 chars).
+
+### 8.8 Bus::name
+
+```cpp
+std::string_view Bus::name() const;
+```
+
+Returns the bus name this handle is attached to.
 
 ---
 
 ## 9. Error Handling
 
-All functions that can fail set `errno` and return -1 (or NULL for
-`membus_open`).
+Functions that can fail throw `std::system_error` with the appropriate
+system error code. `write()`, `read()`, and `read_wait()` return 0
+for edge cases (null pointers, zero length, no data, timeout).
 
-| errno | Condition |
-|-------|-----------|
-| EINVAL | NULL/empty name, NULL bus/data/buffer, len=0, bad magic |
+| Error code | Condition |
+|------------|-----------|
+| EINVAL | Empty name, bad magic |
 | ENOSPC | All 32 reader slots occupied by live processes |
-| EEXIST | Bus already exists (membus_create with O_EXCL) |
-| ENOENT | Bus does not exist (membus_open) |
+| EEXIST | Bus already exists (create with O_EXCL) |
+| ENOENT | Bus does not exist (Bus constructor) |
 | EIO | Mutex is ENOTRECOVERABLE (unrecoverable corruption) |
-| EBADF | Read attempted on handle with no reader slot |
-| EAGAIN | (reserved — not currently returned due to slow reader advance) |
 
 ---
 
 ## 10. Platform Requirements
 
 - **OS:** Linux (futex is Linux-specific via `SYS_futex`)
-- **Standard:** C11 (`-std=c11`)
+- **Standard:** C++17 (`-std=c++17`)
 - **POSIX:** `shm_open`, `mmap`, `ftruncate`, `pthread` robust mutexes
 - **Libraries:** `-lrt` (POSIX realtime), `-lpthread`
 - **Kernel:** futex support (any Linux >= 2.6)
@@ -415,17 +416,16 @@ All functions that can fail set `errno` and return -1 (or NULL for
 ## 11. Build
 
 ```bash
-cd ~/projects/langsyn/membus
-make              # Build libmembus.so
-make test         # Build + run 16 unit tests
-sudo make install # Install to /usr/local/{lib,include}
+make              # Build libmembus.a
+make test         # Build + run 19 unit tests
+sudo make install # Install to /usr/local/{lib,include/membus}
 make clean        # Remove build artifacts
 ```
 
-**Compiler flags:** `-std=c11 -Wall -Wextra -Werror -O2 -fPIC`
+**Compiler flags:** `-std=c++17 -Wall -Wextra -Werror -O2 -fPIC`
 **Link flags:** `-lrt -lpthread`
-**Output:** `libmembus.so` (shared library)
-**Install targets:** `/usr/local/lib/libmembus.so`, `/usr/local/include/membus.h`
+**Output:** `libmembus.a` (static library)
+**Install targets:** `/usr/local/lib/libmembus.a`, `/usr/local/include/membus/membus.hpp`
 
 ---
 
