@@ -22,7 +22,7 @@ make clean        # Remove build artifacts
 ## Directory structure
 - `include/membus.hpp` — Single public header
 - `src/membus.cpp` — Full implementation (pimpl)
-- `tests/` — Test suite (19 tests + test_common.hpp)
+- `tests/` — Test suite (45 tests + test_common.hpp)
 - `docs/` — Spec, baseline
 
 ## API
@@ -45,7 +45,7 @@ membus::Bus(name)                  Open + register reader slot (RAII)
 - Linux only (futex, POSIX SHM)
 
 ## Rules for modifications
-- Run `make clean && make test` before every commit — all 19 tests must pass
+- Run `make clean && make test` before every commit — all 45 tests must pass
 - No routing, framing, or protocol logic — bytes only
 - Lossy by design — slow readers are advanced, never block writers
 - No commented-out code, no bare TODOs, no debug prints

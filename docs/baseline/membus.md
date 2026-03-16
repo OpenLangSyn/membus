@@ -13,7 +13,7 @@ message framing. Bytes in, bytes out. Antheos runs on top of it.
 - Source: `~/projects/langsyn/base/membus/`
 - Header: `include/membus.hpp` (single public header)
 - Implementation: `src/membus.cpp`
-- Tests: `tests/test_membus.cpp` (19 tests + test_common.hpp)
+- Tests: `tests/test_membus.cpp` (45 tests + test_common.hpp)
 - Spec (canon): `docs/MEMBUS_SPEC.md`
 - Compiled: `libmembus.a` (static library)
 
@@ -78,7 +78,7 @@ ShmBuffer header:
 
 ```bash
 make              # Build libmembus.a
-make test         # Run all 19 tests
+make test         # Run all 45 tests
 make install      # Install to /usr/local/lib + /usr/local/include/membus/
 # Flags: -std=c++17 -Wall -Wextra -Werror -O2 -fPIC
 # Links: -lrt -lpthread
@@ -107,6 +107,32 @@ make install      # Install to /usr/local/lib + /usr/local/include/membus/
 | test_move_semantics | Bus move construct/assign |
 | test_create_throws_on_exists | std::system_error on duplicate create |
 | test_open_throws_on_missing | std::system_error on missing bus |
+| test_write_null_returns_zero | write(nullptr/0) returns 0 |
+| test_read_null_returns_zero | read(nullptr/0) returns 0 |
+| test_read_empty_bus | read on empty bus returns 0 |
+| test_create_empty_name | empty name throws EINVAL |
+| test_destroy_empty_name | empty name throws EINVAL |
+| test_open_empty_name | empty name throws EINVAL |
+| test_destroy_nonexistent_silent | destroy non-existent succeeds silently |
+| test_wrap_around_integrity | data correct through circular wrap |
+| test_binary_data_with_nulls | 0x00–0xFF byte pattern roundtrip |
+| test_sequential_writes_reads | concatenated stream ordering |
+| test_partial_read | partial read advances cursor correctly |
+| test_single_byte | one-byte write/read |
+| test_fill_exact_capacity | write exactly size-1 bytes |
+| test_multiple_wrap_cycles | 20 write/read cycles through small buffer |
+| test_broadcast_all_readers | 3 readers all get same data |
+| test_write_larger_than_buffer | write > capacity succeeds (lossy) |
+| test_slow_reader_gets_latest_data | advanced reader sees new data only |
+| test_set_reader_name | name visible in raw SHM slot |
+| test_reader_name_truncation | name truncated at READER_NAME_LEN-1 |
+| test_create_default_size | size=0 creates DEFAULT_SIZE buffer |
+| test_create_custom_size | custom size stored in SHM header |
+| test_read_wait_poll_no_data | timeout=0 returns 0 immediately |
+| test_read_wait_poll_with_data | timeout=0 returns data if available |
+| test_write_after_reader_gone | write unconstrained after reader closes |
+| test_cross_process_write_read | child writes, parent reads |
+| test_reader_sees_only_future_data | late attach sees only new writes |
 
 ## Known Issues
 

@@ -417,7 +417,7 @@ for edge cases (null pointers, zero length, no data, timeout).
 
 ```bash
 make              # Build libmembus.a
-make test         # Build + run 19 unit tests
+make test         # Build + run 45 unit tests
 sudo make install # Install to /usr/local/{lib,include/membus}
 make clean        # Remove build artifacts
 ```
