@@ -1,6 +1,6 @@
 # libmembus C++17
 
-Updated: 2026-03-16
+Updated: 2026-03-17
 
 ## What It Is
 
@@ -15,7 +15,7 @@ message framing. Bytes in, bytes out. Antheos runs on top of it.
 - Implementation: `src/membus.cpp`
 - Tests: `tests/test_membus.cpp` (45 tests + test_common.hpp)
 - Spec (canon): `docs/MEMBUS_SPEC.md`
-- Compiled: `libmembus.a` (static library)
+- Compiled: `libmembus.a` (static), `libmembus.so` (shared)
 
 ## Current State
 

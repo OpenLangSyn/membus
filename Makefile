@@ -26,6 +26,7 @@ TESTDIR  = tests
 SRCS = $(wildcard $(SRCDIR)/*.cpp)
 OBJS = $(patsubst $(SRCDIR)/%.cpp,$(BUILDDIR)/%.o,$(SRCS))
 LIB  = $(BUILDDIR)/libmembus.a
+SO   = $(BUILDDIR)/libmembus.so
 
 # ── Test binaries ──
 
@@ -37,7 +38,7 @@ TESTS = $(TEST_MEMBUS)
 
 .PHONY: all clean test install uninstall help
 
-all: $(LIB)
+all: $(LIB) $(SO)
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
@@ -47,6 +48,9 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.cpp include/membus.hpp | $(BUILDDIR)
 
 $(LIB): $(OBJS)
 	ar $(ARFLAGS) $@ $^
+
+$(SO): $(OBJS)
+	$(CXX) -shared -o $@ $^ $(LDLIBS)
 
 # ── Test build rules ──
 
@@ -60,16 +64,19 @@ test: $(TESTS)
 
 # ── Install / Uninstall ──
 
-install: $(LIB)
+install: $(LIB) $(SO)
 	install -d $(LIBDIR)
 	install -m 644 $(LIB) $(LIBDIR)/libmembus.a
+	install -m 755 $(SO) $(LIBDIR)/libmembus.so
 	install -d $(INCDIR)
 	install -m 644 include/membus.hpp $(INCDIR)/
-	@echo "libmembus installed to $(LIBDIR)/libmembus.a"
+	ldconfig
+	@echo "libmembus installed to $(LIBDIR)/"
 
 uninstall:
-	rm -f $(LIBDIR)/libmembus.a
+	rm -f $(LIBDIR)/libmembus.a $(LIBDIR)/libmembus.so
 	rm -rf $(INCDIR)
+	ldconfig
 	@echo "libmembus uninstalled"
 
 # ── Clean ──
