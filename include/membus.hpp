@@ -4,8 +4,8 @@
  * Circular ring buffer with multi-reader broadcast.
  * Bytes in, bytes out. No routing, parsing, or protocol logic.
  *
- * Copyright (c) 2025-2026 Are Bjorby <are.bjorby@proton.me>
- * Proprietary — all rights reserved.
+ * Copyright (c) 2025-2026 Are Bjørby <are.bjorby@langsyn.org>
+ * SPDX-License-Identifier: MIT
  */
 
 #pragma once

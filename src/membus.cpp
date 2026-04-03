@@ -1,3 +1,13 @@
+/*
+ * membus.cpp — POSIX Shared Memory IPC
+ *
+ * Circular ring buffer with multi-reader broadcast.
+ * Bytes in, bytes out. No routing, parsing, or protocol logic.
+ *
+ * Copyright (c) 2025-2026 Are Bjørby <are.bjorby@langsyn.org>
+ * SPDX-License-Identifier: MIT
+ */
+
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif

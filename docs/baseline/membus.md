@@ -10,7 +10,7 @@ message framing. Bytes in, bytes out. Antheos runs on top of it.
 
 ## Location
 
-- Source: `~/projects/langsyn/base/membus/`
+- Source: project root
 - Header: `include/membus.hpp` (single public header)
 - Implementation: `src/membus.cpp`
 - Tests: `tests/test_membus.cpp` (45 tests + test_common.hpp)

@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.1.0 — 2026-04-03
+
+Open-source release under MIT license.
+
+- MIT license (was proprietary)
+- SPDX-License-Identifier headers in source files
+- CONTRIBUTING.md (was CLAUDE.md)
+- 45 tests across full API surface
+
 ## v2.0.0 — 2026-03-16
 
 Full C++17 rewrite. Native `membus::Bus` class replaces C11 API.

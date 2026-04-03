@@ -9,7 +9,7 @@ No routing, parsing, or protocol logic.
 
 ```bash
 make              # Build libmembus.a
-make test         # Build and run all 19 tests
+make test         # Build and run all 45 tests
 make install      # Install to /usr/local (sudo required)
 make clean        # Remove build artifacts
 ```
@@ -41,6 +41,10 @@ membus::destroy("bus_name");           // Unlink SHM
 
 See `docs/MEMBUS_SPEC.md` for the full specification.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for coding standards and how to contribute.
+
 ## License
 
-Copyright (c) 2025-2026 Are Bjorby. All rights reserved. See `LICENSE`.
+MIT License — see [LICENSE](LICENSE).

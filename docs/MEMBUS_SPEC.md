@@ -1,9 +1,9 @@
 # MemBus Specification v2.0.0
 
-**Author:** Are Bjorby <are.bjorby@proton.me>
+**Author:** Are Bjørby <are.bjorby@langsyn.org>
 **Date:** 2026-03-16
 **Language:** C++17
-**License:** Proprietary
+**License:** MIT
 
 ---
 
