@@ -3,6 +3,8 @@
 C++17 POSIX shared memory IPC library.
 
 Circular ring buffer with multi-reader broadcast. Bytes in, bytes out.
+
+**Author:** Are Bjørby <are.bjorby@langsyn.org>
 No routing, parsing, or protocol logic.
 
 ## Build
